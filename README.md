@@ -25,6 +25,8 @@ FM1 accepts DIN, USB and BLE MIDI input, with USB/BLE output. Default input chan
 
 MIDI preferences are saved independently of projects. The browser simulator previews these settings without sending performance MIDI to external ports; configure the instrument on its panel. MIDI Clock, Start, Continue, Stop and Song Position Pointer input are supported. Clock loss stops synchronized playback.
 
+**Workshop Link:** with a Music Thing Workshop Computer as USB host, a Workshop Link card can show a live readout on the FM1 screen and read the encoders back. HOME + ARP opens the page. See [WORKSHOP_LINK.md](WORKSHOP_LINK.md).
+
 ## Updates and compatibility
 
 V13 can update to V14. The workbench supports returning to original V15 and migrating from compatible third-party firmware. The standard FM1 update protocol remains available. Compatibility has been checked with selected firmware versions; it is not a guarantee for every third-party release.

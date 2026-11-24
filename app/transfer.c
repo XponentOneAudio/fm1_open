@@ -3,6 +3,7 @@
 #include "tuning_hook.h"
 #include "fm_patch.h"
 #include "fm1_engine_control.h"
+#include "workshop_link.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,6 +38,8 @@ static void barrier(void)
 }
 void fm1_app_sysex(const uint8_t *m, size_t n)
 {
+    /* Workshop Link frames (F0 7D 'W' 'L') have their own inbox. */
+    if (groove_link_sysex(m, n)) return;
     if (!m || n < 6 || n > sizeof incoming.bytes || m[0] != 0xf0 || m[n - 1] != 0xf7 ||
         incoming.length)
         return;

@@ -3,6 +3,7 @@
 #include "fm_patch.h"
 #include "version.h"
 #include "fm1_engine_control.h"
+#include "workshop_link.h"
 #include <string.h>
 enum {
     BACK = 0x0000,
@@ -123,7 +124,7 @@ static void text(unsigned x, unsigned y, const char *s, unsigned scale, uint16_t
 }
 /* Eight tracks stay visible on HOME. SEQ maps the sixteen white keys to one
  * quarter of the 64-step pattern. All drawing and edits run on app_control. */
-enum { OVERVIEW, STEPS, FM_EDIT, FM_ENV, FM_LFO, TONE_EDIT, MIX, BLE, PROJECT, NAME, EFFECTS, SOURCE, ACTIONS, STEP_EDIT, RHYTHM, FM_QUICK, PRESET_BROWSER, ARP_EDIT, STARTUP };
+enum { OVERVIEW, STEPS, FM_EDIT, FM_ENV, FM_LFO, TONE_EDIT, MIX, BLE, PROJECT, NAME, EFFECTS, SOURCE, ACTIONS, STEP_EDIT, RHYTHM, FM_QUICK, PRESET_BROWSER, ARP_EDIT, STARTUP, LINK };
 enum { OCT_DOWN, OCT_UP, FX, SCL, ENV, LFO, EDIT, GLO, HOME, SAVE, ARP, SEQ, PLAY, REC };
 #define BUTTON(b) (1U << (b))
 static const uint16_t colors[8] = {0x3c9f, 0x07bf, 0x4eae, 0x06d4, 0xac9f, 0xed18, 0xff06, 0xfba5};
@@ -1352,6 +1353,7 @@ static __attribute__((noinline, cold, minsize)) void boot_draw(void)
         paint_fill(58 + 16 * i, 166 - height[i] / 2, 12, height[i],
                    i < boot_phase ? colors[i] : PANEL);
 }
+#include "link_page.inc"
 static void draw_page_body(const struct fm1_ble_status *ble)
 {
     unsigned visible = boot_active ? STARTUP : glo_down && glo_used ? MIX : page;
@@ -1381,6 +1383,10 @@ static void draw_page_body(const struct fm1_ble_status *ble)
     }
     if (visible == BLE) {
         draw_ble(ble);
+        return;
+    }
+    if (visible == LINK) {
+        link_draw();
         return;
     }
     header(v);
@@ -1605,6 +1611,7 @@ static void draw(const struct fm1_ble_status *ble)
         midi_active[t] = (int32_t)(midi_until[t] - frame_time) > 0;
     }
     frame_ble = *ble;
+    if (visible == LINK) groove_link_view_copy(&frame_link);
     if (visible == BLE) {
         fm1_bluetooth_get_status(&frame_radio);
         frame_radio_flags = groove_settings_radio_flags();
@@ -1926,6 +1933,21 @@ static int apply_controls(const struct fm1_controls *controls, uint32_t now,
     if ((controls->buttons & (BUTTON(HOME) | BUTTON(GLO))) == (BUTTON(HOME) | BUTTON(GLO)) &&
         (pressed & (BUTTON(HOME) | BUTTON(GLO)))) {
         page = BLE; glo_down = glo_used = ble_view = ble_forget = ble_action = 0; ble_result = 0;
+        goto controls_done;
+    }
+    /* HOME+ARP opens the Workshop Link page. There the encoders and the
+     * buttons other than HOME go to the connected card; HOME leaves. Keys,
+     * PLAY and the HOME shortcuts above keep their usual meaning. */
+    if ((controls->buttons & (BUTTON(HOME) | BUTTON(ARP))) == (BUTTON(HOME) | BUTTON(ARP)) &&
+        (pressed & (BUTTON(HOME) | BUTTON(ARP)))) {
+        page = page == LINK ? music_page : LINK;
+        arp_down = arp_long = 0;
+        goto controls_done;
+    }
+    if (page == LINK) {
+        arp_down = arp_long = edit_down = seq_down = 0;
+        if (pressed & BUTTON(HOME)) page = music_page;
+        else groove_link_controls(controls->buttons & ~BUTTON(HOME), controls->encoders);
         goto controls_done;
     }
     /* Keep the original HOME+PRESETS shortcut, including after HOME opens
@@ -2631,6 +2653,11 @@ void groove_screen_control(void)
     if (!transport.playing && transport_seen && step_follow && !writing)
         cursor = transport.play_step;
     transport_seen = transport.playing;
+    groove_link_poll();
+    /* A card may open the link page from HOME, never over an editor. */
+    unsigned link_show = groove_link_take_show();
+    if (link_show == 2 && page == OVERVIEW && !writing && !boot_active) page = LINK;
+    else if (link_show == 1 && page == LINK) page = music_page;
     unsigned old_page = page;
     unsigned boundary =
         controls.buttons != previous_buttons || controls.encoders[0] || controls.encoders[6];
@@ -2660,6 +2687,7 @@ void groove_screen_control(void)
     read_encoders(&controls, now, boundary);
     if (!apply_controls(&controls, now, &ble))
         return;
+    groove_link_set_visible(page == LINK && !boot_active);
     /* Input changes do not wait for the animation timer. LCD work is bounded
      * separately and continues on later polls, even between animation frames. */
     if (now - frame_ms >= 33U || page != old_page || input_changed || saved_cache.shown_page == ~0U) {
